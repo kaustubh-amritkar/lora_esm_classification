@@ -46,10 +46,11 @@ def train_protein_model():
     concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
     
     formIII_lsu_variant_data_df = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id.str.startswith("Anc367") or LSU_id == "Anc367" or LSU_id == "Anc366"')
-    
-    sequences = formIII_lsu_variant_data_df['lsussu_seq'].to_list()
-    binary_activity = formIII_lsu_variant_data_df['activity_binary'].to_list()
+    formIII_lsu_variant_data_df['fixed_threshold_activity'] = formIII_lsu_variant_data_df['mean_reading'].apply(lambda x: 1 if x >= 50 else 0)
 
+    sequences = formIII_lsu_variant_data_df['lsussu_seq'].to_list()
+    binary_activity = formIII_lsu_variant_data_df['fixed_threshold_activity'].to_list()
+    
     tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
 
     class ProteinDataset(Dataset):
