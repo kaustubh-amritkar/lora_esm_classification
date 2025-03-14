@@ -45,15 +45,17 @@ def train_protein_model():
 
     concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
     
-    sequences = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id == "Anc367"')['lsussu_seq'].to_list()
-    binding_sites = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id == "Anc367"')['activity_binary'].to_list()
+    formIII_lsu_variant_data_df = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id.str.startswith("Anc367") or LSU_id == "Anc367" or LSU_id == "Anc366"')
+    
+    sequences = formIII_lsu_variant_data_df['lsussu_seq'].to_list()
+    binary_activity = formIII_lsu_variant_data_df['activity_binary'].to_list()
 
     tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
 
     class ProteinDataset(Dataset):
-        def __init__(self, sequences, binding_sites, tokenizer, max_length=512):
+        def __init__(self, sequences, binary_activity, tokenizer, max_length=512):
             self.sequences = sequences
-            self.binding_sites = binding_sites
+            self.binary_activity = binary_activity
             self.tokenizer = tokenizer
             self.max_length = max_length
 
@@ -62,12 +64,12 @@ def train_protein_model():
 
         def __getitem__(self, idx):
             sequence = self.sequences[idx][:self.max_length]
-            binding_site = self.binding_sites[idx]
+            binding_site = self.binary_activity[idx]
             encoding = self.tokenizer(sequence, truncation=True, padding='max_length', max_length=self.max_length)
             encoding['labels'] = binding_site # + [-100] * (self.max_length - len(binding_site))  # Ignore extra padding tokens
             return encoding
         
-    dataset = ProteinDataset(sequences, binding_sites, tokenizer)
+    dataset = ProteinDataset(sequences, binary_activity, tokenizer)
     train_size = int(0.85 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=torch.Generator().manual_seed(42))
