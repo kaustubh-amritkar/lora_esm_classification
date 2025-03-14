@@ -142,6 +142,7 @@ def train_protein_model():
             return outputs
         
     def model_init():
+        torch.manual_seed(42)
         base_model = CustomModel()
         config = LoraConfig(
             task_type=TaskType.TOKEN_CLS,
@@ -167,7 +168,8 @@ def train_protein_model():
         accuracy = roc_auc_score(labels, predictions)
         return {'accuracy': accuracy}
     
-    output_dir = f"/home/kaustubh/RuBisCO_ML/ESM_LoRA/training_runs/esm2_t6_8M-finetuned-lora"
+    timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = f"/home/kaustubh/RuBisCO_ML/ESM_LoRA/training_runs/esm2_t6_8M-finetuned-lora_{timestamp_str}"
 
     args = TrainingArguments(
             output_dir,
@@ -203,6 +205,7 @@ def train_protein_model():
     def train_final_model(best_trial):
         best_hyperparameters = best_trial.hyperparameters
         model = model_init()
+
         args.learning_rate = best_hyperparameters["learning_rate"]
         args.per_device_train_batch_size = best_hyperparameters["per_device_train_batch_size"]
         final_trainer = Trainer(
