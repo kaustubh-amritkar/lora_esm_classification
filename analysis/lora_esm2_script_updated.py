@@ -29,6 +29,7 @@ from transformers import (
     TrainingArguments,
 )
 import gc
+import copy
 
 def train_protein_model():
     
@@ -107,9 +108,13 @@ def train_protein_model():
             )
 
             sequence_output = outputs.last_hidden_state # (B, L, 1280)
+
+            ## Following for getting the BOS token embedding
             # bos_emb = sequence_output[:,0] # (B, L, 1280) -> (B, 1280)
             # # outputs = [self.outputs[i](sequence_output) for i in range(5)]
             # outputs = self.outputs(bos_emb).squeeze(1) # (B,)
+
+            ## Following for getting the mean of the sequence embeddings
             mask_sum = attention_mask.sum(dim=1, keepdim=True).float()
             mean_emb = (sequence_output * attention_mask.unsqueeze(-1)).sum(dim=1) / mask_sum
             outputs = self.outputs(mean_emb).squeeze(1) # (B,)
@@ -218,7 +223,7 @@ def train_protein_model():
     # )
 
     def hyperparameter_search(trainer, hp_space, n_trials):
-        best_trial = None
+        best_trial_metric = None
         lr_min, lr_max = hp_space["learning_rate"]["min"], hp_space["learning_rate"]["max"]
         per_device_train_batch_size_values = hp_space["per_device_train_batch_size"]["values"]
         lr_range = lr_max - lr_min
@@ -235,10 +240,21 @@ def train_protein_model():
             trainer.args.learning_rate = lr
             trainer.args.per_device_train_batch_size = per_device_train_batch_size_values[0]
             trainer.train()
-            if best_trial is None or trainer.state.best_metric > best_trial.state.best_metric:
-                best_trial = trainer
+            print('trainer:', trainer)
+            print("Best current Metric:", trainer.state.best_metric)
+            if best_trial_metric is not None:
+                print("Best trial metric:", best_trial_metric)
+
+            if best_trial_metric is None or trainer.state.best_metric > best_trial_metric:
+                print("Updating best trial")
+                best_trial_metric = trainer.state.best_metric
+                best_trial = {
+                    "learning_rate": lr,
+                    "per_device_train_batch_size": trainer.args.per_device_train_batch_size,
+                    best_trial_metric: trainer.state.best_metric
+                }
             # Delete the model to save memory
-            cleanup_model(trainer)
+            # cleanup_model(trainer)
         return best_trial
     
     hp_space = wandb_hp_space()
@@ -250,13 +266,12 @@ def train_protein_model():
 
     def train_final_model(best_trial):
         # best_hyperparameters = best_trial.hyperparameters   ## If using the the hyperparameter_search from hugging face
-        best_hyperparameters = best_trial.args    ## If using the the hyperparameter search function
         model = model_init()
 
         # args.learning_rate = best_hyperparameters["learning_rate"] ## If using the the hyperparameter_search from hugging face## If using the the hyperparameter_search from hugging face
         # args.per_device_train_batch_size = best_hyperparameters["per_device_train_batch_size"]  ## If using the the hyperparameter_search from hugging face
-        args.learning_rate = best_hyperparameters.learning_rate   ## If using the the hyperparameter search function
-        args.per_device_train_batch_size = best_hyperparameters.per_device_train_batch_size   ## If using the the hyperparameter search function
+        args.learning_rate = best_trial["learning_rate"]    ## If using the the hyperparameter search function
+        args.per_device_train_batch_size = best_trial["per_device_train_batch_size"]    ## If using the the hyperparameter search function
         final_trainer = Trainer(
             model=model,
             args=args,
