@@ -46,18 +46,37 @@ def train_protein_model():
     
     accelerator = Accelerator()
 
-    concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
-    
-    formIII_lsu_variant_data_df = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id.str.startswith("Anc367") or LSU_id == "Anc367" or LSU_id == "Anc366"')
-    formIII_lsu_variant_data_df['fixed_threshold_activity'] = formIII_lsu_variant_data_df['mean_reading'].apply(lambda x: 1 if x >= 50 else 0)
+    large_dataset = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/large_assay_dataset_wco2_wiptg_bimodal_activity_threshold.pkl')
+    large_dataset = large_dataset[["LSU_id", "SSU_id", "lsu_seq", "ssu_seq", "activity_binary"]]
 
-    sequences = formIII_lsu_variant_data_df['lsussu_seq'].to_list()
-    binary_activity = formIII_lsu_variant_data_df['fixed_threshold_activity'].to_list()
+    mutant_dataset = pd.read_pickle("/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/form_III_IB_anc_variants_binary_activity_only_wrt_inactive_variant.pkl")
+    mutant_dataset.rename(columns={"activity_binary_wrt_inactive_Anc": "activity_binary"}, inplace=True)
+
+    combined_dataset = pd.concat([large_dataset, mutant_dataset], ignore_index=True)
+    combined_dataset = combined_dataset[combined_dataset['LSU_id'] != "SUMO"]
+    combined_dataset = combined_dataset[combined_dataset['LSU_id'] != "DEAD"]
+    combined_dataset['LSU_SSU_id'] = combined_dataset.apply(lambda x: x['LSU_id'] + "-" + x['SSU_id'] if pd.notna(x['SSU_id']) else x['LSU_id'] + "-none", axis=1)
+    combined_dataset['LSU_SSU_seq'] = combined_dataset.apply(lambda x: x['lsu_seq'] + x['ssu_seq'] if pd.notna(x['ssu_seq']) else x['lsu_seq'], axis=1)
+
+    combined_dataset_large_subet = combined_dataset[~combined_dataset['LSU_id'].str.startswith("Anc")]
+    combined_dataset_mutant_subet = combined_dataset[combined_dataset['LSU_id'].str.startswith("Anc")]
+    
+    sequences = combined_dataset_large_subet['LSU_SSU_seq'].to_list()
+    binary_activity = combined_dataset_large_subet['activity_binary'].to_list()    
+
+
+    # concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
+    
+    # formIII_lsu_variant_data_df = concat_all_exp_data.query('LSU_id.str.startswith("Anc393") or LSU_id.str.startswith("Anc367") or LSU_id == "Anc365" or LSU_id == "Anc366"')
+    # formIII_lsu_variant_data_df['fixed_threshold_activity'] = formIII_lsu_variant_data_df['mean_reading'].apply(lambda x: 1 if x >= 50 else 0)
+
+    # sequences = formIII_lsu_variant_data_df['lsussu_seq'].to_list()
+    # binary_activity = formIII_lsu_variant_data_df['fixed_threshold_activity'].to_list()
     
     tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
 
     class ProteinDataset(Dataset):
-        def __init__(self, sequences, binary_activity, tokenizer, max_length=512):
+        def __init__(self, sequences, binary_activity, tokenizer, max_length=1024):
             self.sequences = sequences
             self.binary_activity = binary_activity
             self.tokenizer = tokenizer
