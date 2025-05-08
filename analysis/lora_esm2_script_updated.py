@@ -56,14 +56,14 @@ def train_protein_model():
     combined_dataset = combined_dataset[combined_dataset['LSU_id'] != "SUMO"]
     combined_dataset = combined_dataset[combined_dataset['LSU_id'] != "DEAD"]
     combined_dataset['LSU_SSU_id'] = combined_dataset.apply(lambda x: x['LSU_id'] + "-" + x['SSU_id'] if pd.notna(x['SSU_id']) else x['LSU_id'] + "-none", axis=1)
-    combined_dataset['LSU_SSU_seq'] = combined_dataset.apply(lambda x: x['lsu_seq'] + x['ssu_seq'] if pd.notna(x['ssu_seq']) else x['lsu_seq'], axis=1)
-
+    combined_dataset['LSU_SSU_seq'] = combined_dataset.apply(lambda x: x['lsu_seq'] + x['ssu_seq'] if (pd.notna(x['ssu_seq']) and x["SSU_id"] != "SUMO") else x['lsu_seq'], axis=1)
     combined_dataset_large_subet = combined_dataset[~combined_dataset['LSU_id'].str.startswith("Anc")]
     combined_dataset_mutant_subet = combined_dataset[combined_dataset['LSU_id'].str.startswith("Anc")]
     
+    ### Training only on the large dataset ###
     sequences = combined_dataset_large_subet['LSU_SSU_seq'].to_list()
-    binary_activity = combined_dataset_large_subet['activity_binary'].to_list()    
-
+    binary_activity = combined_dataset_large_subet['activity_binary'].to_list()
+    lsu_ssu_ids = combined_dataset_large_subet['LSU_SSU_id'].to_list()    
 
     # concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
     
@@ -91,11 +91,29 @@ def train_protein_model():
             encoding = self.tokenizer(sequence, truncation=True, padding='max_length', max_length=self.max_length)
             encoding['labels'] = binding_site # + [-100] * (self.max_length - len(binding_site))  # Ignore extra padding tokens
             return encoding
-        
-    dataset = ProteinDataset(sequences, binary_activity, tokenizer)
-    train_size = int(0.85 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=torch.Generator().manual_seed(42))
+    
+    ## Making sure to split the dataset based on LSU_ids
+    def generate_train_test(Xs, ys, headers, random_seed, fraction=0.8):
+        lsu_list = [x.split("-")[0] for x in headers]
+        lsu_list_uniq = pd.Series(lsu_list).unique().copy()
+        random.seed(random_seed)
+        random.shuffle(lsu_list_uniq)
+        train_size = int(len(lsu_list_uniq) * fraction)
+        train_set = lsu_list_uniq[:train_size]
+        test_set = lsu_list_uniq[train_size:]
+        train_indices = [i for i, x in enumerate(lsu_list) if x in train_set]
+        test_indices = [i for i, x in enumerate(lsu_list) if x in test_set]
+
+        Xs_train = [Xs[i] for i in train_indices]
+        Xs_test = [Xs[i] for i in test_indices]
+        ys_train = [ys[i] for i in train_indices]
+        ys_test = [ys[i] for i in test_indices]
+        return train_indices, test_indices, train_set, test_set, Xs_train, Xs_test, ys_train, ys_test
+
+    train_indices, test_indices, train_ids, test_ids, Xs_train, Xs_test, ys_train, ys_test = generate_train_test(sequences, binary_activity, lsu_ssu_ids, 42)
+
+    train_dataset = ProteinDataset(Xs_train, ys_train, tokenizer)
+    val_dataset = ProteinDataset(Xs_test, ys_test, tokenizer)
     train_dataset, val_dataset = accelerator.prepare(train_dataset, val_dataset)
     
     class CustomModel(EsmPreTrainedModel):
