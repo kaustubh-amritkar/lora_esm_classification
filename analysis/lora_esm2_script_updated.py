@@ -60,10 +60,10 @@ def train_protein_model():
     combined_dataset_large_subet = combined_dataset[~combined_dataset['LSU_id'].str.startswith("Anc")]
     combined_dataset_mutant_subet = combined_dataset[combined_dataset['LSU_id'].str.startswith("Anc")]
     
-    ### Training only on the large dataset ###
-    sequences = combined_dataset_large_subet['LSU_SSU_seq'].to_list()
-    binary_activity = combined_dataset_large_subet['activity_binary'].to_list()
-    lsu_ssu_ids = combined_dataset_large_subet['LSU_SSU_id'].to_list()    
+    ### Training/Testing on parts of the whole dataset ###
+    sequences = combined_dataset['LSU_SSU_seq'].to_list()
+    binary_activity = combined_dataset['activity_binary'].to_list()
+    lsu_ssu_ids = combined_dataset['LSU_SSU_id'].to_list()
 
     # concat_all_exp_data = pd.read_pickle('/home/kaustubh/RuBisCO_ML/ESM_LoRA/data/processed_combined_all_exp_assays_data.pkl')
     
